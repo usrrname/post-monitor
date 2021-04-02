@@ -9,13 +9,14 @@ const bot = new App({
 });
 
 async function publishMessage(id, text, link) {
-  const messageContent = link ? text + link : text; 
+  const messageContent = link ? text + link : text;
   try {
     const result = await bot.client.chat.postMessage({
       token: process.env.SLACK_BOT_TOKEN,
       channel: id,
       text: messageContent
     });
+    await bot.client.ack();
   } catch (error) {
     console.error(error);
   }
@@ -29,6 +30,7 @@ async function replyMessage(id, ts, msgText) {
       thread_ts: ts,
       text: msgText
     });
+    await bot.client.ack();
   } catch (error) {
     console.error(error);
   }
@@ -36,28 +38,29 @@ async function replyMessage(id, ts, msgText) {
 
 const keywords = ["scam", "spam", "upwork"];
 
-bot.event("app_mention", async ({ event, client }) => {
+bot.event("app_mention", async ({ event, client, ack }) => {
   try {
     // if the bot is tagged under a unique thread and the thread is not by the bot
     if (
-      event.thread_ts 
-      && keywords.some( key => event.text.includes(key))
-      && event.parent_user_id !== "U01G9D4DX9Q"
+      event.thread_ts &&
+      keywords.some(key => event.text.includes(key)) &&
+      event.parent_user_id !== "U01G9D4DX9Q"
     ) {
       const channelMsg = `Hey <@${event.parent_user_id}>, Your post has been marked as suspicious.`;
 
       // call the user out in the same channel
       await publishMessage(event.channel, channelMsg);
 
-      const msgText = `A post by <@${event.parent_user_id}> in <#${event.channel}> was flagged by <@${event.user}> as suspicious. `;
+      const msgText = `A post by <@${event.parent_user_id}> in <#${event.item.channel}> was flagged by <@${event.user}> as suspicious. `;
       // grab the link to the particular thread
       const link = await client.chat.getPermalink({
         token: client.token,
-        channel: event.channel,
+        channel: event.item.channel,
         message_ts: event.thread_ts
       });
       // notify the mod-group
       await publishMessage("modmode", msgText, link.permalink);
+      await ack();
     } else {
       return;
     }
@@ -66,11 +69,11 @@ bot.event("app_mention", async ({ event, client }) => {
   }
 });
 
-bot.event("reaction_added", async ({ event, client }) => {
-  if (["scamalert", "spam", "caution"].includes(event.reaction)) {
+bot.event("reaction_added", async ({ event, client, ack }) => {
+  if (["scamalert", "spam", "caution", "warning"].includes(event.reaction)) {
     try {
       const msgText =
-        `A post by <@${event.item_user}> in <#${event.channel}> was marked by <@${event.user}> as ` +
+        `A post by <@${event.item_user}> in <#${event.item.channel}> was marked by <@${event.user}> as ` +
         `:${event.reaction}:. `;
 
       const link = await client.chat.getPermalink({
@@ -80,13 +83,14 @@ bot.event("reaction_added", async ({ event, client }) => {
       });
 
       await publishMessage("modmode", msgText, link.permalink);
+      await ack();
     } catch (error) {
       console.error(error);
     }
   }
 });
 
-bot.event("app_home_opened", async ({ event, client, context }) => {
+bot.event("app_home_opened", async ({ event, client, context, ack }) => {
   try {
     /* view.publish is the method that your app uses to push a view to the Home tab */
     const result = await client.views.publish({
@@ -120,6 +124,7 @@ bot.event("app_home_opened", async ({ event, client, context }) => {
         ]
       }
     });
+    await ack();
   } catch (error) {
     console.error(error);
   }
