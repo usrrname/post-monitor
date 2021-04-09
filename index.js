@@ -16,51 +16,73 @@ async function publishMessage(id, text, link) {
       channel: id,
       text: messageContent
     });
-    await bot.client.ack();
+    await result.ack();
   } catch (error) {
     console.error(error);
   }
 }
 
-async function replyMessage(id, ts, msgText) {
+async function replyMessage(id, msgText, thread) {
   try {
     const result = await bot.client.chat.postMessage({
-      token: bot.token,
+      token: process.env.SLACK_BOT_TOKEN,
       channel: id,
-      thread_ts: ts,
-      text: msgText
+      text: msgText,
+      thread_ts: thread
     });
-    await bot.client.ack();
+    await result.ack();
   } catch (error) {
     console.error(error);
   }
 }
 
-const keywords = ["scam", "spam", "upwork"];
+function findKey(eventText) {
+  let keyword = "";
+  keywords.find(key => {
+    if (eventText.includes(key)) {
+      keyword = key;
+      return;
+    }
+  });
+  return keyword;
+}
+
+const keywords = ["scam", "spam", "upwork", "freelance"];
 
 bot.event("app_mention", async ({ event, client, ack }) => {
   try {
+    console.info(event);
     // if the bot is tagged under a unique thread and the thread is not by the bot
     if (
       event.thread_ts &&
       keywords.some(key => event.text.includes(key)) &&
       event.parent_user_id !== "U01G9D4DX9Q"
     ) {
-      const channelMsg = `Hey <@${event.parent_user_id}>, Your post has been marked as suspicious.`;
+      const keyword = findKey(event.text);
+
+      const responseMap = {
+        scam: `Hey <@${event.parent_user_id}>, your post has been marked as suspicious. A member of our moderation team will be investigating.`,
+        spam: `Hey <@${event.parent_user_id}>, this post doesn't quite fit the forum topic.`,
+        freelance: `Hey <@${event.parent_user_id}>, your post would work better in the #freelance channel`
+      };
+
+      const channelMsg = responseMap[keyword] || null;
 
       // call the user out in the same channel
-      await publishMessage(event.channel, channelMsg);
-
-      const msgText = `A post by <@${event.parent_user_id}> in <#${event.item.channel}> was flagged by <@${event.user}> as suspicious. `;
-      // grab the link to the particular thread
-      const link = await client.chat.getPermalink({
-        token: client.token,
-        channel: event.item.channel,
-        message_ts: event.thread_ts
-      });
-      // notify the mod-group
-      await publishMessage("modmode", msgText, link.permalink);
+      await replyMessage(event.channel, channelMsg, event.thread_ts);
       await ack();
+
+      if (keyword !== "freelance") {
+        // grab the link to the particular thread
+        const link = client.chat.getPermalink({
+          token: client.token,
+          channel: event.item.channel,
+          message_ts: event.thread_ts
+        });
+        const msgText = `A post by <@${event.parent_user_id}> in <#${event.item.channel}> was flagged by <@${event.user}> as suspicious. `;
+        await publishMessage("modmode", msgText, link.permalink);
+        await ack();
+      }
     } else {
       return;
     }
